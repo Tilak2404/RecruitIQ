@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum SendingAccountType {
+  GMAIL
+  CUSTOM
+}
+
+enum EmailStatus {
+  DRAFT
+  NOT_SENT
+  SENT
+  OPENED
+  REPLIED
+  FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum SendState {
+  IDLE
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ReplySentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+enum ReplyIntent {
+  INTERVIEW_REQUEST
+  NEED_MORE_INFO
+  REJECTION
+  GENERAL_REPLY
+  UNKNOWN
+}
+
+enum AssistantRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model Resume {
+  id            String   @id @default(cuid())
+  candidateName String
+  fileName      String
+  extractedText String   @db.Text
+  isPrimary     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Recruiter {
+  id            String          @id @default(cuid())
+  name          String
+  email         String          @unique
+  company       String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  emailLogs     EmailLog[]
+  replyAnalyses ReplyAnalysis[]
+}
+
+model Campaign {
+  id             String         @id @default(cuid())
+  name           String
+  description    String?
+  status         CampaignStatus @default(DRAFT)
+  sendState      SendState      @default(IDLE)
+  sendProgress   Int            @default(0)
+  defaultSubject String?
+  delayMs        Int            @default(3500)
+  batchSize      Int            @default(20)
+  rotationSize   Int            @default(20)
+  retryLimit     Int            @default(2)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  emailLogs      EmailLog[]
+}
+
+model EmailLog {
+  id               String          @id @default(cuid())
+  recruiterId      String
+  campaignId       String
+  sendingAccountId String?
+  subject          String
+  body             String          @db.Text
+  trackingToken    String          @unique
+  status           EmailStatus     @default(NOT_SENT)
+  openedAt         DateTime?
+  repliedAt        DateTime?
+  sentAt           DateTime?
+  scheduledAt      DateTime?
+  lastSentAt       DateTime?
+  lastFollowUpAt   DateTime?
+  lastError        String?
+  attemptCount     Int             @default(0)
+  opensCount       Int             @default(0)
+  followUpStage    Int             @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  recruiter        Recruiter       @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+  campaign         Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sendingAccount   SendingAccount? @relation(fields: [sendingAccountId], references: [id], onDelete: SetNull)
+  replyAnalyses    ReplyAnalysis[]
+
+  @@unique([campaignId, recruiterId])
+  @@index([status, sentAt])
+  @@index([scheduledAt, status])
+  @@index([followUpStage, lastSentAt])
+}
+
+model SendingAccount {
+  id          String             @id @default(cuid())
+  name        String
+  type        SendingAccountType
+  fromName    String?
+  email       String             @unique
+  smtpHost    String
+  smtpPort    Int
+  smtpSecure  Boolean            @default(false)
+  password    String
+  dailyLimit  Int                @default(75)
+  hourlyLimit Int                @default(20)
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  emailLogs   EmailLog[]
+}
+
+model AssistantConversation {
+  id        String             @id @default(cuid())
+  title     String             @default("Job Outreach Copilot")
+  isPrimary Boolean            @default(true)
+  messages  AssistantMessage[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([isPrimary])
+}
+
+model AssistantMessage {
+  id             String                @id @default(cuid())
+  conversationId String
+  role           AssistantRole
+  content        String                @db.Text
+  metadata       Json?
+  createdAt      DateTime              @default(now())
+  conversation   AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model ReplyAnalysis {
+  id                String         @id @default(cuid())
+  recruiterId       String?
+  emailLogId        String?
+  content           String         @db.Text
+  sentiment         ReplySentiment
+  intent            ReplyIntent
+  summary           String         @db.Text
+  suggestedReply    String         @db.Text
+  suggestedNextStep String?
+  createdAt         DateTime       @default(now())
+  recruiter         Recruiter?     @relation(fields: [recruiterId], references: [id], onDelete: SetNull)
+  emailLog          EmailLog?      @relation(fields: [emailLogId], references: [id], onDelete: SetNull)
+
+  @@index([recruiterId, createdAt])
+  @@index([emailLogId, createdAt])
+}
+
