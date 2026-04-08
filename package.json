@@ -27,7 +27,7 @@
     "framer-motion": "^12.10.0",
     "lucide-react": "^0.511.0",
     "mammoth": "^1.12.0",
-    "next": "15.5.14",
+    "next": "^16.2.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.5",
     "papaparse": "^5.5.2",

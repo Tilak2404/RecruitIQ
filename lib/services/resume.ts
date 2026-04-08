@@ -1,6 +1,8 @@
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 
+import type { SectionName } from '@/types/app';
+
 export type ResumeSection = {
   name: SectionName;
   content: string[];
@@ -8,18 +10,25 @@ export type ResumeSection = {
 };
 
 export async function extractResumeText(buffer: Buffer): Promise<{text: string, sections?: ResumeSection[]}> {
-  const uint8Array = new Uint8Array(buffer);
-  const docType = mammoth.detectFileType(uint8Array);
-  
-  if (docType === "docx") {
-    const result = await mammoth.extractRawText({arrayBuffer: buffer});
+  // Try DOCX first
+  try {
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+    const result = await mammoth.extractRawText({arrayBuffer});
     const sections = parseSections(result.value);
-    return {text: sections ? sections.map(s => s.content.join('\n')).join('\n\n') : result.value, sections};
+    
+    if (sections && sections.length > 0) {
+      const fullText = sections.map(s => s.content.join('\n')).join('\n\n');
+      return {text: fullText, sections};
+    }
+  } catch (docxError) {
+    console.warn('DOCX parsing failed:', docxError);
   }
 
+  // Fallback to PDF
   const pdfResult = await pdfParse(buffer);
-  const sections = parseSections(pdfResult.text);
-  return {text: pdfResult.text.replace(/\s+/g, " ").trim(), sections};
+  const sections = parseSections(pdfResult.text) || undefined;
+  const pdfText = pdfResult.text.replace(/\s+/g, " ").trim();
+  return {text: pdfText, sections};
 }
 
 function parseSections(text: string): ResumeSection[] | null {
@@ -45,7 +54,8 @@ function parseSections(text: string): ResumeSection[] | null {
   const other = sections.filter(s => s.name === 'Other');
   if (other.length > 0) {
     const mainOther = other[0];
-    sections = sections.filter(s => s.name !== 'Other').concat([mainOther]);
+    sections.splice(sections.findIndex(s => s.name === 'Other'), 1);
+    sections.push(mainOther);
   }
 
   return sections;

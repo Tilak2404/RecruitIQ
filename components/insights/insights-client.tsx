@@ -12,7 +12,40 @@ import { VoiceInputButton } from "@/components/shared/voice-input-button";
 import { apiFetch } from "@/lib/http";
 import { formatPercent, stripHtml } from "@/lib/utils";
 import { getSentimentTone } from "@/lib/workspace-ui";
-import type { AnalyticsSnapshot, CampaignDetail, JobTargetPersona, ReplyAnalysisSummary, ReplyInsightsSnapshot } from "@/types/app";
+import type { JobTargetPersona } from "@/types/app";
+
+interface AnalyticsSnapshot {
+  responseRate: number;
+  openRate: number;
+  personalInsights: {
+    averageReplyProbability: number;
+  };
+}
+
+interface CampaignDetail {
+  id: string;
+  emailLogs: Array<{
+    id: string;
+    recruiterId: string;
+    recruiter: { name: string; company: string };
+  }>;
+}
+
+interface ReplyAnalysisSummary {
+  id: string;
+  sentiment: string;
+  intent?: string;
+  summary: string;
+  suggestedReply: string;
+  suggestedNextStep: string;
+  recruiter?: { name: string; company: string };
+}
+
+interface ReplyInsightsSnapshot {
+  summary: string;
+  weakPatterns: string[];
+  recommendations: string[];
+}
 
 export function InsightsClient({
   analytics,
@@ -36,7 +69,7 @@ export function InsightsClient({
   const [refreshing, setRefreshing] = useState(false);
 
   const replyOptions = selectedCampaign?.emailLogs ?? [];
-  const selectedReplyLog = replyOptions.find((log) => log.id === selectedReplyLogId) ?? replyOptions[0] ?? null;
+  const selectedReplyLog = replyOptions.find((log: any) => log.id === selectedReplyLogId) ?? replyOptions[0] ?? null;
 
   async function copyToClipboard(value: string, label: string) {
     try {
@@ -147,9 +180,9 @@ export function InsightsClient({
               className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-white outline-none transition focus:border-primary/40"
             >
               {replyOptions.length > 0 ? (
-                replyOptions.map((log) => (
+                replyOptions.map((log: any) => (
                   <option key={log.id} value={log.id} className="bg-[#111111] text-white">
-                    {log.recruiter.name} | {log.recruiter.company}
+                    {log.recruiter?.name || 'Unknown'} | {log.recruiter?.company || 'Unknown'}
                   </option>
                 ))
               ) : (
@@ -167,7 +200,7 @@ export function InsightsClient({
               <VoiceInputButton
                 className="h-11 w-11 rounded-full border border-white/10 bg-white/[0.04] text-white/70"
                 disabled={analysisLoading}
-                onTranscript={(value) => setReplyText((current) => `${current}${current ? " " : ""}${value}`)}
+                onTranscript={(value) => setReplyText((current) => current + (current ? " " : "") + value)}
               />
             </div>
 
@@ -180,7 +213,9 @@ export function InsightsClient({
               <div className="space-y-4 rounded-[24px] border border-white/10 bg-black/20 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className={getSentimentTone(analysisResult.sentiment)}>{analysisResult.sentiment}</Badge>
-                  <Badge className="border-white/10 bg-white/5 text-white">{analysisResult.intent.replace(/_/g, " ")}</Badge>
+                  <Badge className="border-white/10 bg-white/5 text-white">
+                    {analysisResult.intent?.replace(/_/g, " ") || "Unknown"}
+                  </Badge>
                   {analysisResult.recruiter ? (
                     <Badge className="border-white/10 bg-white/5 text-white/75">
                       {analysisResult.recruiter.name} | {analysisResult.recruiter.company}
@@ -193,7 +228,7 @@ export function InsightsClient({
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">Suggested next step</p>
-                  <p className="mt-2 text-sm leading-7 text-white/65">{analysisResult.suggestedNextStep}</p>
+                  <p className="mt-2 text-sm leading-7 text-white/65">{analysisResult.suggestedNextStep || "No next step available"}</p>
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
@@ -224,12 +259,12 @@ export function InsightsClient({
             <div className="rounded-[24px] border border-white/10 bg-black/20 p-4 text-sm leading-7 text-white/70">
               {replyInsights.summary}
             </div>
-            {replyInsights.weakPatterns.map((item) => (
+            {replyInsights.weakPatterns.map((item: string) => (
               <div key={item} className="rounded-2xl border border-red-400/15 bg-red-400/10 px-4 py-3 text-sm text-red-100/85">
                 {item}
               </div>
             ))}
-            {replyInsights.recommendations.map((item) => (
+            {replyInsights.recommendations.map((item: string) => (
               <div key={item} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm leading-7 text-white/65">
                 {item}
               </div>
@@ -245,11 +280,13 @@ export function InsightsClient({
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {recentAnalyses.length > 0 ? (
-            recentAnalyses.map((analysis) => (
+            recentAnalyses.map((analysis: ReplyAnalysisSummary) => (
               <div key={analysis.id} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className={getSentimentTone(analysis.sentiment)}>{analysis.sentiment}</Badge>
-                  <Badge className="border-white/10 bg-white/5 text-white">{analysis.intent.replace(/_/g, " ")}</Badge>
+                  <Badge className="border-white/10 bg-white/5 text-white">
+                    {analysis.intent?.replace(/_/g, " ") || "Unknown"}
+                  </Badge>
                 </div>
                 <p className="mt-3 text-sm leading-7 text-white/65">{analysis.summary}</p>
               </div>
@@ -262,3 +299,4 @@ export function InsightsClient({
     </div>
   );
 }
+

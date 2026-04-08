@@ -56,11 +56,35 @@ enum AssistantRole {
   SYSTEM
 }
 
+enum FeedbackQuality {
+  PERFECT
+  GOOD
+  OK
+  BAD
+  WRONG
+}
+
+model FeedbackLog {
+  id          String         @id @default(cuid())
+  feature     String         // 'ats', 'email', 'consistency'
+  userInput   Json           // JD, resume snippet
+  aiOutput    Json           // analysis result
+  feedback    FeedbackQuality
+  userComment String?
+  sessionId   String
+  modelUsed   String         // 'gemini-1.5-flash'
+  createdAt   DateTime       @default(now())
+  
+  @@index([feature, feedback])
+  @@index([createdAt])
+}
+
 model Resume {
   id            String   @id @default(cuid())
   candidateName String
   fileName      String
   extractedText String   @db.Text
+  sections      Json?    // structured sections from parser
   isPrimary     Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

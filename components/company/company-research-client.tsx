@@ -8,7 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/http";
-import type { CompanyResearchResult } from "@/types/app";
+interface CompanyResearchResult {
+  overview: string;
+  culture: string;
+  hiring_focus: string;
+  keywords: string[];
+  outreach_angle: string;
+}
 import { Badge } from "@/components/ui/badge"; // Assuming a Badge component exists for tags
 
 export function CompanyResearchClient() { // jobDescription prop removed
@@ -57,7 +63,7 @@ export function CompanyResearchClient() { // jobDescription prop removed
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row">
-            <Input placeholder="Enter company name" value={company} onChange={(event) => setCompany(event.target.value)} />
+<Input id="company-name" name="company" placeholder="Enter company name" value={company} onChange={(event) => setCompany(event.target.value)} />
             <Button onClick={() => void handleResearch()} disabled={loading}>
               <Search className="h-4 w-4" />
               {loading ? "Researching..." : "Research Company"}
@@ -76,7 +82,7 @@ export function CompanyResearchClient() { // jobDescription prop removed
                 <Building2 className="h-5 w-5 text-primary" />
                 Overview
               </CardTitle>
-              <CardDescription>A concise summary of {result.company}.</CardDescription>
+              <CardDescription>A concise summary of the company.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-3 text-sm leading-7 text-white/65">
@@ -124,14 +130,14 @@ export function CompanyResearchClient() { // jobDescription prop removed
                 <Tag className="h-5 w-5 text-primary" />
                 Keywords
               </CardTitle>
-              <CardDescription>Important terms and concepts associated with {result.company}.</CardDescription>
+              <CardDescription>Important terms and concepts associated with the company.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
-              {result.keywords.map((keyword, index) => (
-                <Badge key={index} variant="secondary">
-                  {keyword}
-                </Badge>
-              ))}
+{result.keywords.map((keyword, index) => (
+  <Badge key={index} className="bg-secondary text-secondary-foreground">
+    {keyword}
+  </Badge>
+))}
             </CardContent>
           </Card>
 
@@ -142,7 +148,7 @@ export function CompanyResearchClient() { // jobDescription prop removed
                 <Lightbulb className="h-5 w-5" />
                 Outreach Angle
               </CardTitle>
-              <CardDescription>Key points to leverage for effective communication with {result.company}.</CardDescription>
+              <CardDescription>Key points to leverage for effective communication.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-[22px] border border-primary/15 bg-primary/10 px-4 py-3 text-sm leading-7 text-white/75 font-semibold"> {/* Made font bolder */}

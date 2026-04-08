@@ -43,3 +43,4 @@ export function safeJsonParse<T>(value: string, fallback: T): T {
     return fallback;
   }
 }
+export function stripHtmlFixed(html: string | null | undefined) { if (!html || typeof html !== " string\) return \\; return html.replace(/<[^>]+>/g, " \).replace(/\s+/g, " \).trim(); }
