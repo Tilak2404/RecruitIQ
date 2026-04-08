@@ -237,9 +237,20 @@ export type KeywordCategory = 'critical' | 'important' | 'optional';
 export type ImprovementImpact = 'high' | 'medium' | 'low';
 export type SectionName = 'Summary' | 'Skills' | 'Experience' | 'Projects' | 'Education' | 'Other';
 
+export interface BulletCredibility {
+  credibilityScore: number;
+  issues: string[];
+  risk: 'low' | 'medium' | 'high';
+  improved: string;
+  reason: string;
+  safe: boolean;
+}
+
 export interface SectionAnalysis {
   name: SectionName;
   score: number;
+  credibilityScore: number;
+  weakestBullets: number;
   issues: string[];
   suggestions: Array<{
     id: string;
@@ -247,6 +258,7 @@ export interface SectionAnalysis {
     improved: string;
     reason: string;
     impact: ImprovementImpact;
+    credibility: BulletCredibility;
   }>;
 }
 
