@@ -233,20 +233,49 @@ export interface DashboardSnapshot {
   selectedCampaign: CampaignDetail | null;
 }
 
-export interface AtsAnalysisResult {
+export type KeywordCategory = 'critical' | 'important' | 'optional';
+export type ImprovementImpact = 'high' | 'medium' | 'low';
+export type SectionName = 'Summary' | 'Skills' | 'Experience' | 'Projects' | 'Education' | 'Other';
+
+export interface SectionAnalysis {
+  name: SectionName;
+  score: number;
+  issues: string[];
+  suggestions: Array<{
+    id: string;
+    original: string;
+    improved: string;
+    reason: string;
+    impact: ImprovementImpact;
+  }>;
+}
+
+export interface AdvancedAtsResult {
   personaTarget: JobTargetPersona;
   atsScore: number;
   keywordMatchPercentage: number;
   matchSummary: string;
-  matchedKeywords: string[];
-  missingKeywords: string[];
+  sections: SectionAnalysis[];
+  keywordCategories: Record<KeywordCategory, string[]>;
   skillGaps: string[];
   suggestedSkillAdditions: string[];
   strengths: string[];
   weaknesses: string[];
   suggestions: string[];
-  improvedBulletPoints: string[];
+  bulletImprovements: Array<{
+    id: string;
+    section: SectionName;
+    original: string;
+    improved: string;
+    reason: string;
+    impact: ImprovementImpact;
+  }>;
+  roleDetected: string;
+  metricsPresence: number;
+  actionVerbsScore: number;
 }
+
+export type AtsAnalysisResult = AdvancedAtsResult;
 
 export interface StoredAtsAnalysis extends AtsAnalysisResult {
   id: string;
