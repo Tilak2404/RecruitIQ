@@ -1,6 +1,6 @@
 import { apiError, apiSuccess } from "@/lib/api";
 import { storeAtsAnalysis } from "@/lib/services/ats";
-import { analyzeResumeAgainstJobDescription } from "@/lib/services/gemini";
+import { analyzeAtsCompatibility } from "@/lib/ats/engine";
 import { atsAnalyzeSchema } from "@/lib/validators";
 
 export const runtime = "nodejs";
@@ -8,13 +8,15 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const payload = atsAnalyzeSchema.parse(await request.json());
-    const analysis = await analyzeResumeAgainstJobDescription({
-      resumeText: payload.resume,
+    const resumeText = payload.resumeText ?? payload.resume ?? "";
+    const persona = payload.persona ?? "STARTUP";
+    const analysis = analyzeAtsCompatibility({
+      resumeText,
       jobDescription: payload.jobDescription,
-      persona: payload.persona
+      persona
     });
     const stored = await storeAtsAnalysis({
-      resumeText: payload.resume,
+      resumeText,
       jobDescription: payload.jobDescription,
       analysis
     });

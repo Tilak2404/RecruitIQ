@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { analyzeResumeAgainstJobDescription } from '@/lib/services/gemini';
+import { analyzeAtsCompatibility } from '@/lib/ats/engine';
 import { getJobOsSettings } from '@/lib/services/job-os';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
@@ -26,10 +26,10 @@ export async function POST(req: NextRequest) {
     }
 
     const settings = await getJobOsSettings();
-    const analysis = await analyzeResumeAgainstJobDescription({
+    const analysis = analyzeAtsCompatibility({
       resumeText: targetText,
       jobDescription,
-      persona: (persona as any) || settings.persona
+      persona: persona ?? settings.persona
     });
 
     return NextResponse.json({ analysis });

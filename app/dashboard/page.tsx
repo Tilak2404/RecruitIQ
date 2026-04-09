@@ -1,8 +1,9 @@
 import { DashboardOverviewClient } from "@/components/dashboard/dashboard-overview-client";
 import { prisma } from "@/lib/prisma";
-import { fallbackOutreachOverview, withPageDataFallback } from "@/lib/page-data";
+import { fallbackApplyReadiness, fallbackImprovementLoop, fallbackOutreachOverview, withPageDataFallback } from "@/lib/page-data";
 import { getAssistantMessages } from "@/lib/services/assistant";
 import { getActiveAtsAnalysis } from "@/lib/services/ats";
+import { getApplyReadinessSnapshot, getImprovementLoopSnapshot } from "@/lib/services/readiness";
 import { getOutreachOverview } from "@/lib/services/strategy";
 import type { AssistantMessageSummary } from "@/types/app";
 
@@ -38,7 +39,7 @@ function DashboardUnavailableState({ message }: { message: string }) {
 
 export default async function DashboardPage() {
   try {
-    const [overview, assistantMessages, resume, activeAtsAnalysis] = await Promise.all([
+    const [overview, assistantMessages, resume, activeAtsAnalysis, readiness, improvementLoop] = await Promise.all([
       withPageDataFallback(
         getOutreachOverview().catch(() => fallbackOutreachOverview),
         fallbackOutreachOverview,
@@ -60,7 +61,17 @@ export default async function DashboardPage() {
         null,
         DASHBOARD_LOAD_TIMEOUT_MS
       ),
-      withPageDataFallback(getActiveAtsAnalysis().catch(() => null), null, DASHBOARD_LOAD_TIMEOUT_MS)
+      withPageDataFallback(getActiveAtsAnalysis().catch(() => null), null, DASHBOARD_LOAD_TIMEOUT_MS),
+      withPageDataFallback(
+        getApplyReadinessSnapshot().catch(() => fallbackApplyReadiness),
+        fallbackApplyReadiness,
+        DASHBOARD_LOAD_TIMEOUT_MS
+      ),
+      withPageDataFallback(
+        getImprovementLoopSnapshot().catch(() => fallbackImprovementLoop),
+        fallbackImprovementLoop,
+        DASHBOARD_LOAD_TIMEOUT_MS
+      )
     ]);
 
     const degraded = overview === fallbackOutreachOverview || assistantMessages === dashboardAssistantMessagesFallback;
@@ -72,6 +83,8 @@ export default async function DashboardPage() {
         degraded={degraded}
         candidateName={resume?.candidateName ?? null}
         activeAtsAnalysis={activeAtsAnalysis}
+        readiness={readiness}
+        improvementLoop={improvementLoop}
       />
     );
   } catch (error) {

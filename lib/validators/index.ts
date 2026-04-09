@@ -31,20 +31,28 @@ export const sendingAccountSchema = z.object({
   isActive: z.boolean().default(true)
 });
 
-export const atsAnalyzeSchema = z.object({
-  resumeText: z.string().min(1),
-  jobDescription: z.string().min(1),
-  persona: z.enum(["STARTUP", "BIG_TECH", "HR_RECRUITER", "HIRING_MANAGER"]).optional()
-});
+export const atsAnalyzeSchema = z
+  .object({
+    resume: z.string().min(1).optional(),
+    resumeText: z.string().min(1).optional(),
+    jobDescription: z.string().min(1),
+    persona: z.enum(["STARTUP", "BIG_TECH", "HR_RECRUITER", "HIRING_MANAGER"]).optional()
+  })
+  .refine((value) => Boolean(value.resume || value.resumeText), {
+    message: "Resume text is required",
+    path: ["resumeText"]
+  });
 
 export const createCampaignSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  recruiters: z.array(z.object({
-    name: z.string(),
-    email: z.string().email(),
-    company: z.string()
-  })).min(1),
+  recruiters: z.array(
+    z.object({
+      name: z.string().min(1),
+      email: z.string().email(),
+      company: z.string().min(1)
+    })
+  ).min(1),
   subject: z.string().min(1),
   body: z.string().min(1),
   batchSize: z.number().int().min(1).max(50).default(20),
@@ -57,54 +65,72 @@ export const assistantMessageSchema = z.object({
 
 export const atsUseSchema = z.object({
   analysisId: z.string(),
-  useForOutreach: z.boolean()
+  useForOutreach: z.boolean().optional()
 });
 
-export const updateEmailLogSchema = z.object({
-  id: z.string(),
-  subject: z.string().optional(),
-  body: z.string().optional()
-});
+export const updateEmailLogSchema = z
+  .object({
+    id: z.string().optional(),
+    emailLogId: z.string().optional(),
+    subject: z.string().optional(),
+    body: z.string().optional(),
+    status: z.enum(["DRAFT", "NOT_SENT", "SENT", "OPENED", "REPLIED", "FAILED"]).optional()
+  })
+  .refine((value) => Boolean(value.id || value.emailLogId), {
+    message: "Email log id is required",
+    path: ["emailLogId"]
+  });
 
 export const emailScoreSchema = z.object({
-  subject: z.string(),
-  body: z.string()
+  persona: z.enum(["STARTUP", "BIG_TECH", "HR_RECRUITER", "HIRING_MANAGER"]).optional(),
+  drafts: z.array(
+    z.object({
+      emailLogId: z.string().optional(),
+      recruiterName: z.string().min(1),
+      recruiterEmail: z.string().email().optional(),
+      company: z.string().min(1),
+      subject: z.string().min(1),
+      body: z.string().min(1)
+    })
+  ).min(1)
 });
 
 export const followUpSchema = z.object({
-  emailLogId: z.string(),
-  stage: z.number().int().min(1)
+  campaignId: z.string().optional(),
+  emailLogId: z.string().optional()
 });
 
 export const generateEmailSchema = z.object({
-  recruiterName: z.string(),
-  company: z.string(),
-  atsAnalysisId: z.string().optional(),
-  persona: z.enum(["STARTUP", "BIG_TECH", "HR_RECRUITER", "HIRING_MANAGER"]),
-  variationHint: z.string().optional()
+  campaignId: z.string().min(1),
+  recruiterId: z.string().optional(),
+  persona: z.enum(["STARTUP", "BIG_TECH", "HR_RECRUITER", "HIRING_MANAGER"]).optional(),
+  mode: z.enum(["STANDARD", "AB_TEST"]).optional(),
+  regenerateAll: z.boolean().optional()
 });
 
 export const jobExtractSchema = z.object({
-  jobUrl: z.string().url()
+  url: z.string().url()
 });
 
 export const jobOsSettingsSchema = z.object({
-  bestTimeToSend: z.string().optional()
+  persona: z.enum(["STARTUP", "BIG_TECH", "HR_RECRUITER", "HIRING_MANAGER"])
 });
 
 export const portfolioGenerateSchema = z.object({
-  persona: z.enum(["STARTUP", "BIG_TECH", "HR_RECRUITER", "HIRING_MANAGER"]),
-  focusArea: z.string()
+  persona: z.enum(["STARTUP", "BIG_TECH", "HR_RECRUITER", "HIRING_MANAGER"]).optional(),
+  focusArea: z.string().optional(),
+  resume: z.string().optional()
 });
 
 export const recruiterSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
-  company: z.string().optional()
+  company: z.string().min(1)
 });
 
 export const scheduleEmailSchema = z.object({
-  emailLogIds: z.array(z.string()).min(1),
+  campaignId: z.string().min(1),
+  emailLogIds: z.array(z.string()).min(1).optional(),
   scheduledAt: z.string().datetime()
 });
 
@@ -112,4 +138,3 @@ export const sendCampaignSchema = z.object({
   campaignId: z.string(),
   batchSize: z.number().int().optional()
 });
-

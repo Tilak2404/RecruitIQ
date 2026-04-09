@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { detectAgentIntent, selectAgentTools } from "@/lib/ai/agent";
+import { analyzeConsistency } from "@/lib/consistency/engine";
 import { getActiveAtsAnalysis } from "@/lib/services/ats";
 import {
   analyzeRecruiterReply,
@@ -11,8 +13,9 @@ import {
   type AssistantReplyDraft
 } from "@/lib/services/gemini";
 import { extractJobDescriptionFromUrl } from "@/lib/services/job-extract";
-import { researchCompany } from "@/lib/services/job-intelligence";
+import { analyzeReplyInsights, researchCompany, scoreOutreachEmail } from "@/lib/services/job-intelligence";
 import { getJobOsSettings } from "@/lib/services/job-os";
+import { getApplyReadinessSnapshot } from "@/lib/services/readiness";
 import { trimResumeForPrompt } from "@/lib/services/resume";
 import { getBestSendTimeSuggestion, getOutreachOverview } from "@/lib/services/strategy";
 import { stripHtml } from "@/lib/utils";
@@ -56,6 +59,7 @@ type AssistantScopedContext = {
   jobDescription: string;
   jobSourceTitle: string;
   jobUrl: string;
+  recentCompanyResearch: CompanyResearchResult | null;
   reasoningPlan: AssistantReasoningPlan;
 };
 
@@ -63,10 +67,15 @@ type AssistantToolName =
   | "resume_context"
   | "ats_context"
   | "email_history"
+  | "memory_context"
   | "outreach_overview"
   | "company_research"
   | "job_extract"
   | "ats_analysis"
+  | "apply_readiness"
+  | "consistency_check"
+  | "reply_insights"
+  | "email_score"
   | "reply_analysis"
   | "email_generation";
 
@@ -86,6 +95,10 @@ type ExplicitMessageContext = {
   recruiter: string;
   company: string;
   emailDraft: string;
+};
+
+type CompanyResearchMemoryMetadata = CompanyResearchResult & {
+  kind: "company_research_memory";
 };
 
 const resumeAnalysisPatterns = [
@@ -167,6 +180,18 @@ const strategyAdvicePatterns = [
   "outreach advice"
 ];
 
+const careerCoachPatterns = [
+  "improve my chances",
+  "am i ready",
+  "ready to apply",
+  "what should i fix first",
+  "get hired",
+  "why no replies",
+  "why am i not getting replies",
+  "what is blocking me",
+  "how can i improve my chances"
+];
+
 const continuationPatterns = [
   "make it shorter",
   "make this shorter",
@@ -230,6 +255,23 @@ function extractIntentFromMetadata(metadata: unknown): AssistantIntent | null {
   }
 
   return null;
+}
+
+function isCompanyResearchMemory(metadata: unknown): metadata is CompanyResearchMemoryMetadata {
+  return Boolean(
+    metadata &&
+      typeof metadata === "object" &&
+      !Array.isArray(metadata) &&
+      (metadata as { kind?: unknown }).kind === "company_research_memory"
+  );
+}
+
+function isCareerCoachRequest(message: string) {
+  const normalized = normalizeText(message);
+  return (
+    includesAny(normalized, careerCoachPatterns) ||
+    /\b(improve.*chances|ready.*apply|fix.*first|get hired|no replies|not getting replies)\b/.test(normalized)
+  );
 }
 
 function detectIntentFromMessage(message: string): AssistantIntent | null {
@@ -331,6 +373,10 @@ function inferIntentFromHistory(previousMessages: StoredAssistantMessage[]) {
 }
 
 function detectAssistantIntent(message: string, previousMessages: StoredAssistantMessage[]): AssistantIntent {
+  if (isCareerCoachRequest(message)) {
+    return "strategy_advice";
+  }
+
   const directIntent = detectIntentFromMessage(message);
   if (directIntent) return directIntent;
 
@@ -570,7 +616,9 @@ function buildAssistantReasoningPlan(input: {
           : input.intent === "reply_analysis"
             ? ["Sentiment", "Intent", "Suggested Reply", "Next Step"]
             : input.intent === "strategy_advice"
-              ? ["Assessment", "Improvements", "Next Steps"]
+              ? isCareerCoachRequest(input.userMessage)
+                ? ["Readiness", "Biggest Blockers", "Best Fixes", "Next Step"]
+                : ["Assessment", "Improvements", "Next Steps"]
               : ["Direct answer"];
 
   const responseGoal =
@@ -582,9 +630,11 @@ function buildAssistantReasoningPlan(input: {
           ? "Generate or refine a concise LinkedIn message."
           : input.intent === "reply_analysis"
             ? "Analyze the reply content and recommend the next best response."
-            : input.intent === "strategy_advice"
-              ? "Provide practical outreach improvements without drifting into unrelated details."
-              : "Answer the user's question directly with only relevant context.";
+          : input.intent === "strategy_advice"
+            ? isCareerCoachRequest(input.userMessage)
+              ? "Act like a career coach. Use the available ATS, outreach, and resume context to diagnose what is blocking progress and what to fix first."
+              : "Provide practical outreach improvements without drifting into unrelated details."
+            : "Answer the user's question directly with only relevant context.";
 
   const ignoredContext = (Object.keys(contextPresence) as AssistantContextKey[]).filter((key) => !relevantContext.has(key));
 
@@ -646,6 +696,46 @@ export async function getAssistantMessages(limit = 10) {
   });
 
   return messages.reverse();
+}
+
+async function getRecentCompanyResearchMemories(limit = 6) {
+  const conversation = await getOrCreatePrimaryConversation();
+
+  const messages = await prisma.assistantMessage.findMany({
+    where: {
+      conversationId: conversation.id,
+      role: "SYSTEM"
+    },
+    orderBy: { createdAt: "desc" },
+    take: Math.max(limit, 1) * 3
+  });
+
+  return messages
+    .map((message) => {
+      if (!isCompanyResearchMemory(message.metadata)) {
+        return null;
+      }
+
+      return message.metadata as CompanyResearchMemoryMetadata;
+    })
+    .filter((message): message is CompanyResearchMemoryMetadata => message !== null)
+    .slice(0, limit);
+}
+
+async function storeCompanyResearchMemory(research: CompanyResearchResult) {
+  const conversation = await getOrCreatePrimaryConversation();
+
+  await prisma.assistantMessage.create({
+    data: {
+      conversationId: conversation.id,
+      role: "SYSTEM",
+      content: `Stored company research for ${research.company}.`,
+      metadata: {
+        kind: "company_research_memory",
+        ...research
+      } satisfies CompanyResearchMemoryMetadata
+    }
+  });
 }
 
 function extractFirstUrl(message: string) {
@@ -750,6 +840,61 @@ function buildAtsAnalysisMessage(input: {
   ].join("\n");
 }
 
+function buildCareerCoachMessage(input: {
+  readiness: Awaited<ReturnType<typeof getApplyReadinessSnapshot>>;
+  atsAnalysis: Awaited<ReturnType<typeof analyzeResumeAgainstJobDescription>> | null;
+  consistency:
+    | ReturnType<typeof analyzeConsistency>
+    | null;
+  replyInsights: Awaited<ReturnType<typeof analyzeReplyInsights>> | null;
+  emailScore: Awaited<ReturnType<typeof scoreOutreachEmail>> | null;
+  toolPlan: string[];
+}) {
+  const readinessLine = input.readiness.ready
+    ? `You are ready to apply. Current readiness score: ${input.readiness.score}/100.`
+    : `You are not ready yet. Current readiness score: ${input.readiness.score}/100.`;
+  const blockerLines = input.readiness.blockers.length > 0 ? input.readiness.blockers.map((item) => `- ${item}`) : ["- No major blockers detected."];
+  const fixLines = [
+    ...input.readiness.improvements,
+    ...(input.atsAnalysis?.improvements?.slice(0, 2) ?? []),
+    ...(input.consistency?.fixes.slice(0, 2) ?? []),
+    ...(input.replyInsights?.recommendations.slice(0, 2) ?? [])
+  ].filter((item, index, array) => Boolean(item) && array.indexOf(item) === index);
+
+  const strongestInsight =
+    input.replyInsights?.weakPatterns[0] ??
+    input.emailScore?.issues[0] ??
+    input.consistency?.issues[0]?.description ??
+    input.atsAnalysis?.improvements?.[0] ??
+    "Your system is in decent shape, so the next lift is tighter personalization and follow-through.";
+
+  const nextStep =
+    input.readiness.blockers[0] ??
+    input.replyInsights?.recommendations[0] ??
+    input.emailScore?.suggestions[0] ??
+    input.atsAnalysis?.improvements?.[0] ??
+    "Generate one targeted outreach draft and review it before sending.";
+
+  return [
+    "Readiness",
+    readinessLine,
+    "",
+    "What is blocking you most",
+    strongestInsight,
+    "",
+    "Fix these first",
+    ...blockerLines,
+    "",
+    "Highest-leverage improvements",
+    ...(fixLines.length > 0 ? fixLines.slice(0, 5).map((item) => `- ${item}`) : ["- Keep your current direction and focus on sharper company-specific opening lines."]),
+    "",
+    "Next move",
+    nextStep,
+    "",
+    `Tool plan used: ${input.toolPlan.join(", ") || "general guidance"}`
+  ].join("\n");
+}
+
 function extractReplyContentForAnalysis(context: AssistantScopedContext) {
   if (/reply\s*:/i.test(context.userMessage)) {
     return context.userMessage.replace(/^[\s\S]*?reply\s*:/i, "").trim();
@@ -824,6 +969,7 @@ async function buildAssistantContext(input: {
     input.intent === "reply_analysis" ||
     input.intent === "strategy_advice" ||
     isCompanyResearchRequest(normalizedMessage);
+  const needsMemory = needsRecruiterContext || isCareerCoachRequest(input.userMessage);
 
   const needsJobExtraction = Boolean(messageUrl) && (isAtsRequest(normalizedMessage) || input.intent === "strategy_advice" || input.intent === "email_generation");
 
@@ -875,15 +1021,19 @@ async function buildAssistantContext(input: {
   const overviewPromise = input.intent === "strategy_advice" ? getOutreachOverview() : Promise.resolve(null);
   const timingPromise = input.intent === "strategy_advice" ? getBestSendTimeSuggestion() : Promise.resolve(null);
   const jobExtractionPromise = needsJobExtraction ? extractJobDescriptionFromUrl(messageUrl).catch(() => null) : Promise.resolve(null);
+  const companyResearchMemoryPromise: Promise<CompanyResearchMemoryMetadata[]> = needsMemory
+    ? getRecentCompanyResearchMemories(6)
+    : Promise.resolve([]);
 
-  const [resume, recentLogs, atsContext, settings, overview, bestTimeSuggestion, extractedJob] = await Promise.all([
+  const [resume, recentLogs, atsContext, settings, overview, bestTimeSuggestion, extractedJob, companyResearchMemories] = await Promise.all([
     resumePromise,
     recentLogsPromise,
     atsContextPromise,
     settingsPromise,
     overviewPromise,
     timingPromise,
-    jobExtractionPromise
+    jobExtractionPromise,
+    companyResearchMemoryPromise
   ]);
 
   const explicitContext = extractExplicitMessageContext(input.userMessage);
@@ -898,6 +1048,9 @@ async function buildAssistantContext(input: {
     chatHistory: input.chatHistory,
     recentLogs
   });
+  const matchedCompany = explicitContext.company || matchedLog?.recruiter.company || "";
+  const recentCompanyResearch =
+    companyResearchMemories.find((entry) => normalizeText(entry.company) === normalizeText(matchedCompany)) ?? null;
 
   const strategyContext =
     overview && bestTimeSuggestion
@@ -924,7 +1077,8 @@ async function buildAssistantContext(input: {
     emailHistorySummary: buildEmailHistorySummary(recentLogs),
     jobDescription: extractedJob?.description ?? atsContext?.jobDescription ?? "",
     jobSourceTitle: extractedJob?.title ?? "",
-    jobUrl: messageUrl
+    jobUrl: messageUrl,
+    recentCompanyResearch
   };
 
   return {
@@ -936,7 +1090,14 @@ async function buildAssistantContext(input: {
 async function runAssistantAgent(context: AssistantScopedContext): Promise<AssistantAgentResult> {
   const toolRuns: AssistantToolRun[] = [];
   const strategySections = [context.strategyContext, context.emailHistorySummary].filter(Boolean);
-  let companyResearchResult: CompanyResearchResult | null = null;
+  const agentIntent = detectAgentIntent(context.userMessage);
+  const plannedTools = selectAgentTools(agentIntent, {
+    hasResume: Boolean(context.resume),
+    hasJobDescription: Boolean(context.jobDescription || context.atsContext?.jobDescription),
+    hasEmailDraft: Boolean(context.emailDraft),
+    hasCompany: Boolean(context.company)
+  });
+  let companyResearchResult: CompanyResearchResult | null = context.recentCompanyResearch;
 
   if (context.resume) {
     toolRuns.push({ tool: "resume_context", summary: "Loaded the active resume as grounding context." });
@@ -950,6 +1111,13 @@ async function runAssistantAgent(context: AssistantScopedContext): Promise<Assis
     toolRuns.push({ tool: "email_history", summary: `Loaded ${Math.min(context.recentLogs.length, 12)} recent outreach records for history and personalization.` });
   }
 
+  if (context.recentCompanyResearch) {
+    toolRuns.push({
+      tool: "memory_context",
+      summary: `Loaded saved company research memory for ${context.recentCompanyResearch.company}.`
+    });
+  }
+
   if (context.strategyContext) {
     toolRuns.push({ tool: "outreach_overview", summary: "Loaded current outreach metrics and send-time guidance." });
   }
@@ -961,15 +1129,19 @@ async function runAssistantAgent(context: AssistantScopedContext): Promise<Assis
     });
   }
 
-  if (shouldResearchCompany(context)) {
+  if (!companyResearchResult && shouldResearchCompany(context)) {
     companyResearchResult = await researchCompany({
       company: context.company,
       jobDescription: context.jobDescription || context.atsContext?.jobDescription
     });
+    await storeCompanyResearchMemory(companyResearchResult);
     toolRuns.push({
       tool: "company_research",
       summary: `Researched ${companyResearchResult.company} for tone, outreach angles, and company context.`
     });
+  }
+
+  if (companyResearchResult) {
     strategySections.push(buildCompanyResearchContext(companyResearchResult));
   }
 
@@ -987,8 +1159,109 @@ async function runAssistantAgent(context: AssistantScopedContext): Promise<Assis
     reasoningPlan: buildAssistantReasoningPlan({
       ...context,
       strategyContext: enrichedStrategyContext
-    })
-  } satisfies AssistantScopedContext;
+      })
+    } satisfies AssistantScopedContext;
+
+  if (isCareerCoachRequest(context.userMessage) || agentIntent === "coach") {
+    const readiness = await getApplyReadinessSnapshot();
+    toolRuns.push({
+      tool: "apply_readiness",
+      summary: `Checked overall apply readiness at ${readiness.score}/100.`
+    });
+
+    const atsAnalysis =
+      context.resume && context.jobDescription
+        ? await analyzeResumeAgainstJobDescription({
+            resumeText: context.resume,
+            jobDescription: context.jobDescription,
+            persona: context.persona
+          })
+        : context.atsContext;
+
+    if (atsAnalysis) {
+      toolRuns.push({
+        tool: "ats_analysis",
+        summary: `Reviewed ATS alignment at ${atsAnalysis.atsScore}/100 for the current target role.`
+      });
+    }
+
+    const consistency =
+      context.resume && context.jobDescription && context.emailDraft
+        ? analyzeConsistency({
+            resumeText: context.resume,
+            jobDescription: context.jobDescription,
+            emailDraft: context.emailDraft
+          })
+        : null;
+
+    if (consistency) {
+      toolRuns.push({
+        tool: "consistency_check",
+        summary: `Checked messaging consistency at ${Math.round(consistency.consistencyScore)}/100.`
+      });
+    }
+
+    const replyInsights =
+      context.recentLogs.length > 0
+        ? await analyzeReplyInsights({
+            persona: context.persona,
+            fastMode: true,
+            emails: context.recentLogs.slice(0, 8).map((log) => ({
+              recruiterName: log.recruiter.name,
+              company: log.recruiter.company,
+              subject: log.subject,
+              body: log.body,
+              replied: log.status === "REPLIED"
+            }))
+          })
+        : null;
+
+    if (replyInsights) {
+      toolRuns.push({
+        tool: "reply_insights",
+        summary: "Reviewed recent outreach patterns to diagnose what is suppressing replies."
+      });
+    }
+
+    const emailScore =
+      context.matchedLog
+        ? await scoreOutreachEmail({
+            recruiterName: context.matchedLog.recruiter.name,
+            recruiterEmail: context.matchedLog.recruiter.email,
+            company: context.matchedLog.recruiter.company,
+            subject: context.matchedLog.subject,
+            body: context.matchedLog.body,
+            persona: context.persona,
+            fastMode: true
+          })
+        : null;
+
+    if (emailScore) {
+      toolRuns.push({
+        tool: "email_score",
+        summary: `Scored the most relevant outreach draft at ${emailScore.replyScore}/100 reply strength.`
+      });
+    }
+
+    return {
+      reply: {
+        message: buildCareerCoachMessage({
+          readiness,
+          atsAnalysis,
+          consistency,
+          replyInsights,
+          emailScore,
+          toolPlan: plannedTools
+        }),
+        suggestedActions: [
+          "What should I fix first?",
+          "Write a stronger email for this role",
+          "Show me the ATS gaps"
+        ]
+      },
+      toolRuns
+    };
+  }
 
   if (context.intent === "reply_analysis") {
     const replyContent = extractReplyContentForAnalysis(context);

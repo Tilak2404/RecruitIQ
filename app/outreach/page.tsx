@@ -45,7 +45,6 @@ export default async function OutreachPage({
         initialRecruiters={data.recruiters}
         initialCampaign={data.selectedCampaign}
         initialResume={data.resume}
-        initialOverview={data.overview}
         initialTimeSuggestion={data.timeSuggestion}
         initialPersona={data.jobOsSettings.persona}
         hasActiveAccount={data.accounts.some((account) => account.isActive)}

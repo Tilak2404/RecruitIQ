@@ -1158,21 +1158,26 @@ export function DashboardClient({ initialData }: { initialData: DashboardSnapsho
 
       <motion.div {...cardMotion}>
         <Card className="rounded-[30px]">
-          <CardHeader>
-            <CardTitle>1. Upload Resume</CardTitle>
-            <CardDescription>Upload one PDF resume to power the assistant, email generation, and ATS analysis.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="flex cursor-pointer items-center justify-between rounded-[24px] border border-dashed border-white/15 bg-black/20 px-5 py-5 transition hover:border-primary/40 hover:bg-primary/5">
-              <div className="text-left">
-                <p className="text-base font-semibold text-white">Choose PDF resume</p>
-                <p className="mt-1 text-sm text-white/45">Text extraction is automatic and used across the platform.</p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <Upload className="h-5 w-5" />
-              </div>
-              <input className="hidden" type="file" accept="application/pdf" onChange={handleResumeUpload} />
-            </label>
+            <CardHeader>
+              <CardTitle>1. Upload Resume</CardTitle>
+              <CardDescription>Upload one PDF or DOCX resume to power the assistant, email generation, and ATS analysis.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <label className="flex cursor-pointer items-center justify-between rounded-[24px] border border-dashed border-white/15 bg-black/20 px-5 py-5 transition hover:border-primary/40 hover:bg-primary/5">
+                <div className="text-left">
+                  <p className="text-base font-semibold text-white">Choose PDF or DOCX resume</p>
+                  <p className="mt-1 text-sm text-white/45">Text extraction is automatic and used across the platform.</p>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Upload className="h-5 w-5" />
+                </div>
+                <input
+                  className="hidden"
+                  type="file"
+                  accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={handleResumeUpload}
+                />
+              </label>
 
             <div className="rounded-[24px] border border-white/10 bg-white/5 px-5 py-4">
               <p className="text-sm text-white/45">Uploaded file</p>

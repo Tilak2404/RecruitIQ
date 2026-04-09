@@ -31,7 +31,11 @@ describe('Gemini Services - Exported Functions', () => {
 })
 
 describe('Gemini Internal Functions via Namespace', () => {
-  const g = gemini as any
+  const g = gemini as typeof gemini & {
+    parseJsonResponse: <T>(text: string) => T | null
+    sanitizeStringList: (value: unknown, fallback: string[], limit?: number) => string[]
+    clampPercentage: (value: number) => number
+  }
 
   it('parseJsonResponse returns null for invalid JSON', () => {
     expect(g.parseJsonResponse('invalid')).toBeNull()

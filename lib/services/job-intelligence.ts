@@ -1,4 +1,5 @@
 import { stripHtml } from "@/lib/utils";
+import { buildCompanyResearch } from "@/lib/research/company";
 import type {
   CompanyResearchResult,
   EmailQualityScore,
@@ -113,6 +114,27 @@ function sanitizeStringList(value: unknown, fallback: string[], limit = 6) {
 
 function getWordCount(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function deriveEmailIssues(input: {
+  personalizationScore: number;
+  clarityScore: number;
+  lengthScore: number;
+  ctaStrengthScore: number;
+  body: string;
+}) {
+  const issues = [
+    input.personalizationScore < 70 ? "The email still feels too generic for the target company or recruiter." : "",
+    input.clarityScore < 70 ? "The strongest fit is not landing quickly enough in the opening half of the email." : "",
+    input.lengthScore < 70
+      ? getWordCount(input.body) > 190
+        ? "The message is too long and may bury the strongest evidence."
+        : "The message is so short that it may not establish enough fit."
+      : "",
+    input.ctaStrengthScore < 70 ? "The CTA is weak and does not give the recruiter a clean next step." : ""
+  ].filter(Boolean);
+
+  return issues.slice(0, 4);
 }
 
 export function getPersonaGuidance(persona: JobTargetPersona) {
@@ -237,13 +259,22 @@ function buildFallbackEmailScore(input: {
     input.persona === "STARTUP" ? "Lean more into speed, ownership, and hands-on execution." : "",
     input.persona === "BIG_TECH" ? "Lean more into scale, systems thinking, and cross-functional delivery." : ""
   ].filter(Boolean);
-
-  return {
-    score,
+  const issues = deriveEmailIssues({
     personalizationScore,
     clarityScore,
     lengthScore,
     ctaStrengthScore,
+    body: plainBody
+  });
+
+  return {
+    score,
+    replyScore: score,
+    personalizationScore,
+    clarityScore,
+    lengthScore,
+    ctaStrengthScore,
+    issues,
     reasons: reasons.slice(0, 3),
     suggestions: suggestions.slice(0, 4),
     recruiterPersonality: personality
@@ -281,10 +312,12 @@ ${stripHtml(input.body)}
 
 Return strict JSON with:
 - score (0-100)
+- replyScore (0-100)
 - personalizationScore (0-100)
 - clarityScore (0-100)
 - lengthScore (0-100)
 - ctaStrengthScore (0-100)
+- issues: string[]
 - reasons: string[]
 - suggestions: string[]
 - recruiterPersonality: { tone, audience, rationale }
@@ -300,10 +333,22 @@ Rules:
 
   return {
     score: clampScore(parsed.score),
+    replyScore: clampScore(parsed.replyScore ?? parsed.score),
     personalizationScore: clampScore(parsed.personalizationScore),
     clarityScore: clampScore(parsed.clarityScore),
     lengthScore: clampScore(parsed.lengthScore),
     ctaStrengthScore: clampScore(parsed.ctaStrengthScore),
+    issues: sanitizeStringList(
+      parsed.issues,
+      deriveEmailIssues({
+        personalizationScore: parsed.personalizationScore,
+        clarityScore: parsed.clarityScore,
+        lengthScore: parsed.lengthScore,
+        ctaStrengthScore: parsed.ctaStrengthScore,
+        body: stripHtml(input.body)
+      }),
+      4
+    ),
     reasons: sanitizeStringList(parsed.reasons, fallback.reasons, 4),
     suggestions: sanitizeStringList(parsed.suggestions, fallback.suggestions, 4),
     recruiterPersonality:
@@ -504,22 +549,36 @@ Rules:
 }
 
 function buildFallbackCompanyResearch(company: string): CompanyResearchResult {
+  const cultureNotes = [
+    `${company} is likely looking for concise communication and a strong signal of role fit.`,
+    "Recruiter-facing outreach should usually balance confidence with clarity instead of sounding overly broad."
+  ];
+  const recentSignals = [
+    "Use only verifiable public context when referencing recent company movement or priorities.",
+    "If you do not have recent company specifics, anchor the outreach around the role and team impact instead."
+  ];
+  const outreachAngles = [
+    "Reference the role or product area you are targeting.",
+    "Connect one resume highlight to the kind of problems the team is likely solving.",
+    "Keep the first message short and tailored instead of over-explaining your full background."
+  ];
+  const toneRecommendation =
+    "Lead with relevance, keep the tone polished, and mention one company-specific angle if you can verify it.";
+
   return {
     company,
-    cultureNotes: [
-      `${company} is likely looking for concise communication and a strong signal of role fit.`,
-      "Recruiter-facing outreach should usually balance confidence with clarity instead of sounding overly broad."
-    ],
-    recentSignals: [
-      "Use only verifiable public context when referencing recent company movement or priorities.",
-      "If you do not have recent company specifics, anchor the outreach around the role and team impact instead."
-    ],
-    outreachAngles: [
-      "Reference the role or product area you are targeting.",
-      "Connect one resume highlight to the kind of problems the team is likely solving.",
-      "Keep the first message short and tailored instead of over-explaining your full background."
-    ],
-    toneRecommendation: "Lead with relevance, keep the tone polished, and mention one company-specific angle if you can verify it."
+    overview: `${company} is a target company where concise, role-relevant outreach is likely to land better than generic messaging.`,
+    key_products: ["Software products", "Internal platforms", "Digital experiences"],
+    culture: cultureNotes.join(" "),
+    hiring_focus: "Prioritize role fit, communication clarity, and examples of relevant execution.",
+    tech_stack: ["JavaScript", "TypeScript", "Cloud", "APIs"],
+    recent_signals: recentSignals.join(" "),
+    keywords: [company.toLowerCase(), "software", "engineering", "product", "hiring", "team"],
+    outreach_angle: outreachAngles[0],
+    cultureNotes,
+    recentSignals,
+    outreachAngles,
+    toneRecommendation
   };
 }
 
@@ -527,6 +586,14 @@ export async function researchCompany(input: {
   company: string;
   jobDescription?: string;
 }): Promise<CompanyResearchResult> {
+  if (process.env.SERPER_API_KEY || process.env.GEMINI_API_KEY) {
+    return buildCompanyResearch({
+      company: input.company,
+      serperApiKey: process.env.SERPER_API_KEY,
+      geminiApiKey: process.env.GEMINI_API_KEY
+    });
+  }
+
   const fallback = buildFallbackCompanyResearch(input.company);
   const prompt = `You are helping a job seeker prepare company-specific outreach.
 
@@ -553,6 +620,14 @@ Rules:
 
   return {
     company: parsed.company?.trim() || fallback.company,
+    overview: parsed.overview?.trim() || fallback.overview,
+    key_products: sanitizeStringList(parsed.key_products, fallback.key_products, 5),
+    culture: parsed.culture?.trim() || fallback.culture,
+    hiring_focus: parsed.hiring_focus?.trim() || fallback.hiring_focus,
+    tech_stack: sanitizeStringList(parsed.tech_stack, fallback.tech_stack, 6),
+    recent_signals: parsed.recent_signals?.trim() || fallback.recent_signals,
+    keywords: sanitizeStringList(parsed.keywords, fallback.keywords, 6),
+    outreach_angle: parsed.outreach_angle?.trim() || fallback.outreach_angle,
     cultureNotes: sanitizeStringList(parsed.cultureNotes, fallback.cultureNotes, 5),
     recentSignals: sanitizeStringList(parsed.recentSignals, fallback.recentSignals, 5),
     outreachAngles: sanitizeStringList(parsed.outreachAngles, fallback.outreachAngles, 5),

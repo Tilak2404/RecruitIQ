@@ -25,6 +25,21 @@ type QueueItem = Prisma.EmailLogGetPayload<{
   };
 }>;
 
+async function claimEmailLogForSending(emailLogId: string) {
+  const result = await prisma.emailLog.updateMany({
+    where: {
+      id: emailLogId,
+      status: "NOT_SENT"
+    },
+    data: {
+      status: "DRAFT",
+      lastError: null
+    }
+  });
+
+  return result.count === 1;
+}
+
 function createTransport(account: SendingAccount) {
   return nodemailer.createTransport({
     host: account.smtpHost,
@@ -177,6 +192,11 @@ async function processQueue(
 
   try {
     for (const [index, log] of limitedQueue.entries()) {
+      const claimed = await claimEmailLogForSending(log.id);
+      if (!claimed) {
+        continue;
+      }
+
       if (rotationCounter >= rotationSize) {
         rotationIndex = (rotationIndex + 1) % accounts.length;
         rotationCounter = 0;
@@ -311,6 +331,8 @@ export async function sendCampaignEmails(options: SendCampaignOptions) {
   const queue = await getSendQueue(campaign.id, options.scheduledOnly ?? false);
   return processQueue(campaign, queue, options);
 }
+
+export { claimEmailLogForSending };
 
 export async function sendDueScheduledEmails() {
   const campaigns = await prisma.campaign.findMany({

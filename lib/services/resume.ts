@@ -1,82 +1,97 @@
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
+import { detectResumeSections, flattenResumeSections, hasValidResumeStructure, type ResumeSection } from "@/lib/resume/sections";
+import { sanitizeMultilineText } from "@/lib/utils/safety";
 
-import type { SectionName } from '@/types/app';
+export type { ResumeSection };
 
-export type ResumeSection = {
-  name: SectionName;
-  content: string[];
-  originalLines: string[];
+type ResumeExtractionOptions = {
+  fileName?: string;
+  mimeType?: string;
 };
 
-export async function extractResumeText(buffer: Buffer): Promise<{text: string, sections?: ResumeSection[]}> {
-  // Try DOCX first
+function detectResumeFileKind(buffer: Buffer, options: ResumeExtractionOptions) {
+  const fileName = options.fileName?.toLowerCase() ?? "";
+  const mimeType = options.mimeType?.toLowerCase() ?? "";
+  const signature = buffer.subarray(0, 8).toString("utf8");
+
+  if (fileName.endsWith(".docx") || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return "docx" as const;
+  }
+
+  if (fileName.endsWith(".pdf") || mimeType === "application/pdf") {
+    return "pdf" as const;
+  }
+
+  if (signature.startsWith("%PDF-")) {
+    return "pdf" as const;
+  }
+
+  if (signature.startsWith("PK")) {
+    return "docx" as const;
+  }
+
+  return "unknown" as const;
+}
+
+async function extractDocxResumeText(buffer: Buffer) {
   try {
     const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
-    const result = await mammoth.extractRawText({arrayBuffer});
-    const sections = parseSections(result.value);
-    
-    if (sections && sections.length > 0) {
-      const fullText = sections.map(s => s.content.join('\n')).join('\n\n');
-      return {text: fullText, sections};
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    const sections = detectResumeSections(result.value);
+    const normalizedDocxText = sanitizeMultilineText(result.value);
+
+    if (hasValidResumeStructure(normalizedDocxText, sections)) {
+      return {
+        text: flattenResumeSections(sections),
+        sections
+      };
+    }
+
+    if (normalizedDocxText) {
+      return {
+        text: normalizedDocxText
+      };
     }
   } catch (docxError) {
-    console.warn('DOCX parsing failed:', docxError);
+    throw new Error(`DOCX parsing failed: ${docxError instanceof Error ? docxError.message : "Unsupported DOCX file."}`);
   }
+  
+  throw new Error("DOCX parsing failed: No extractable text was found in the uploaded file.");
+}
 
-  // Fallback to PDF
+async function extractPdfResumeText(buffer: Buffer) {
   const pdfResult = await pdfParse(buffer);
-  const sections = parseSections(pdfResult.text) || undefined;
-  const pdfText = pdfResult.text.replace(/\s+/g, " ").trim();
-  return {text: pdfText, sections};
+  const sections = detectResumeSections(pdfResult.text);
+  const pdfText = sanitizeMultilineText(pdfResult.text);
+
+  return {
+    text: pdfText,
+    sections: hasValidResumeStructure(pdfText, sections) ? sections : undefined
+  };
 }
 
-function parseSections(text: string): ResumeSection[] | null {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-  const sections: ResumeSection[] = [];
-  let currentSection: ResumeSection | null = null;
+export async function extractResumeText(
+  buffer: Buffer,
+  options: ResumeExtractionOptions = {}
+): Promise<{ text: string; sections?: ResumeSection[] }> {
+  const fileKind = detectResumeFileKind(buffer, options);
 
-  for (const line of lines) {
-    if (isSectionHeading(line)) {
-      if (currentSection) sections.push(currentSection);
-      currentSection = {name: mapSectionName(line), content: [], originalLines: []};
-    } else if (currentSection) {
-      currentSection.content.push(line);
-      currentSection.originalLines.push(line);
-    }
+  if (fileKind === "docx") {
+    return extractDocxResumeText(buffer);
   }
 
-  if (currentSection) sections.push(currentSection);
-
-  if (sections.length === 0) return null;
-
-  // Merge small/Other
-  const other = sections.filter(s => s.name === 'Other');
-  if (other.length > 0) {
-    const mainOther = other[0];
-    sections.splice(sections.findIndex(s => s.name === 'Other'), 1);
-    sections.push(mainOther);
+  if (fileKind === "pdf") {
+    return extractPdfResumeText(buffer);
   }
 
-  return sections;
-}
-
-function isSectionHeading(line: string): boolean {
-  const upper = line.toUpperCase();
-  return upper.includes('EXPERIENCE') || upper.includes('SKILLS') || upper.includes('PROJECT') || upper.includes('EDUCATION') || upper.includes('SUMMARY') || upper.includes('PROFESSIONAL');
-}
-
-function mapSectionName(line: string): SectionName {
-  const upper = line.toUpperCase();
-  if (upper.includes('SUMMARY') || upper.includes('PROFESSIONAL')) return 'Summary';
-  if (upper.includes('SKILLS')) return 'Skills';
-  if (upper.includes('EXPERIENCE') || upper.includes('WORK')) return 'Experience';
-  if (upper.includes('PROJECT')) return 'Projects';
-  if (upper.includes('EDUCATION') || upper.includes('ACADEMIC')) return 'Education';
-  return 'Other';
+  try {
+    return await extractDocxResumeText(buffer);
+  } catch {
+    return extractPdfResumeText(buffer);
+  }
 }
 
 export function trimResumeForPrompt(text: string): string {
   return text.slice(0, 7000);
 }
-

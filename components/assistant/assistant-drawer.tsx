@@ -13,9 +13,9 @@ import { formatAssistantMessageTime, getMessageActions } from "@/lib/workspace-u
 import type { AssistantMessageSummary } from "@/types/app";
 
 const assistantQuickPrompts = [
-  "Write a LinkedIn DM for a Google recruiter",
-  "How should I improve my outreach strategy this week?",
-  "What follow-up plan should I use for non-responsive recruiters?"
+  "Improve my chances with the current setup",
+  "Am I ready to apply yet?",
+  "Write a stronger recruiter email for my target role"
 ];
 
 type AssistantResponsePayload = {
@@ -58,7 +58,7 @@ function AssistantPanel({
           </div>
           <h2 className="mt-4 text-2xl font-semibold text-white">AI Assistant</h2>
           <p className="mt-2 max-w-md text-sm leading-6 text-white/50">
-            Memory-aware help for timing, messaging, LinkedIn outreach, and follow-ups.
+            Memory-aware coaching for resume fit, readiness, messaging, LinkedIn outreach, and follow-ups.
           </p>
         </div>
         <Button
@@ -77,7 +77,7 @@ function AssistantPanel({
           <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/40">Quick Start</p>
             <p className="mt-3 text-sm leading-7 text-white/70">
-              Ask for recruiter strategy, a LinkedIn DM, reply guidance, or the best time to reach out.
+              Ask for recruiter strategy, readiness checks, a LinkedIn DM, reply guidance, or the best time to reach out.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {assistantQuickPrompts.map((prompt) => (
@@ -184,7 +184,7 @@ function AssistantPanel({
               }
             }}
             className="min-h-[120px] resize-none border-0 bg-transparent px-3 py-2 text-[15px] text-white shadow-none focus:border-transparent focus:ring-0"
-            placeholder="Ask about reply strategy, follow-ups, best send times, or a LinkedIn message..."
+            placeholder="Ask how to improve your chances, fix ATS gaps, tighten outreach, or draft a better message..."
           />
           <div className="mt-3 flex items-center justify-between gap-3 px-3 pb-1">
             <p className="text-xs uppercase tracking-[0.2em] text-white/35">Ctrl + Enter to send</p>
@@ -371,7 +371,7 @@ export function AssistantDrawer({ initialMessages }: { initialMessages: Assistan
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              className="absolute inset-y-0 right-0 h-full w-full lg:w-[40vw]"
+              className="absolute inset-y-0 right-0 h-full w-full lg:w-[min(1180px,92vw)]"
               aria-label="AI Assistant"
               aria-modal="true"
               role="dialog"

@@ -43,20 +43,35 @@ export function JobOsCommandPalette() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  function queueAssistantPrompt(prompt: string) {
-    if (pathname !== "/dashboard") {
-      window.sessionStorage.setItem("job-os-command-prompt", prompt);
-      router.push("/dashboard");
-      setOpen(false);
-      return;
-    }
-
-    window.dispatchEvent(new CustomEvent("jobos:assistant-prompt", { detail: { prompt, openAssistant: true } }));
-    setOpen(false);
-  }
-
   const actions = useMemo<CommandAction[]>(
-    () => [
+    () => {
+      function queueAssistantPrompt(prompt: string) {
+        if (pathname !== "/dashboard") {
+          window.sessionStorage.setItem("job-os-command-prompt", prompt);
+          router.push("/dashboard");
+          setOpen(false);
+          return;
+        }
+
+        window.dispatchEvent(new CustomEvent("jobos:assistant-prompt", { detail: { prompt, openAssistant: true } }));
+        setOpen(false);
+      }
+
+      return [
+      {
+        id: "improve-chances",
+        label: "Improve My Chances",
+        hint: "Ask the assistant to run a readiness and messaging check",
+        icon: Sparkles,
+        run: () => queueAssistantPrompt("Improve my chances with the current setup.")
+      },
+      {
+        id: "apply-readiness",
+        label: "Am I Ready?",
+        hint: "Check whether your system is ready to apply and what to fix first",
+        icon: BrainCircuit,
+        run: () => queueAssistantPrompt("Am I ready to apply yet?")
+      },
       {
         id: "write-email",
         label: "Write Email",
@@ -121,7 +136,8 @@ export function JobOsCommandPalette() {
           setOpen(false);
         }
       }
-    ],
+      ];
+    },
     [pathname, router]
   );
 

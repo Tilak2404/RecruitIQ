@@ -157,6 +157,28 @@ export async function clearSentEmailLogs(campaignId: string) {
   };
 }
 
+export async function archiveDeliveredEmailLogs(campaignId: string) {
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: { id: true }
+  });
+
+  if (!campaign) {
+    throw new Error("Campaign not found");
+  }
+
+  const result = await prisma.emailLog.deleteMany({
+    where: {
+      campaignId,
+      status: { in: ["SENT", "OPENED", "REPLIED"] }
+    }
+  });
+
+  return {
+    archived: result.count
+  };
+}
+
 async function ensureWorkflowCampaign() {
   const campaignId = await getOrCreateWorkflowCampaignId();
   return getCampaignDetail(campaignId);

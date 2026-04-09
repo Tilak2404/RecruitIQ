@@ -98,7 +98,7 @@ export function CompanyResearchClient() { // jobDescription prop removed
                 <Users className="h-5 w-5 text-primary" />
                 Culture
               </CardTitle>
-              <CardDescription>Insights into the company's work environment and values.</CardDescription>
+              <CardDescription>Insights into the company&apos;s work environment and values.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-3 text-sm leading-7 text-white/65">

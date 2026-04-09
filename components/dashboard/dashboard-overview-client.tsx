@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BarChart3, FileText, ScanSearch, SendHorizontal } from "lucide-react";
+import { ArrowRight, BarChart3, CircleAlert, FileText, ScanSearch, SendHorizontal, Sparkles } from "lucide-react";
 import { AssistantDrawer } from "@/components/assistant/assistant-drawer";
 import { formatDateTime, formatPercent } from "@/lib/utils";
-import type { AssistantMessageSummary, OutreachOverview, StoredAtsAnalysis } from "@/types/app";
+import type { ApplyReadinessResult, AssistantMessageSummary, ImprovementLoopSnapshot, OutreachOverview, StoredAtsAnalysis } from "@/types/app";
 
 const navigationCards = [
   {
@@ -66,16 +66,23 @@ export function DashboardOverviewClient({
   assistantMessages,
   degraded,
   candidateName,
-  activeAtsAnalysis
+  activeAtsAnalysis,
+  readiness,
+  improvementLoop
 }: {
   overview: OutreachOverview;
   assistantMessages: AssistantMessageSummary[];
   degraded: boolean;
   candidateName: string | null;
   activeAtsAnalysis: StoredAtsAnalysis | null;
+  readiness: ApplyReadinessResult;
+  improvementLoop: ImprovementLoopSnapshot;
 }) {
   const displayName = candidateName?.trim() || "there";
   const recentActivity = [...assistantMessages].reverse().slice(0, 5);
+  const readinessTone = readiness.ready
+    ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
+    : "border-amber-300/20 bg-amber-300/10 text-amber-50";
 
   const metrics = [
     {
@@ -108,16 +115,31 @@ export function DashboardOverviewClient({
             {getGreetingLabel()}, {displayName}
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-            Here's your job search overview
+            Here&apos;s your job search overview
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-white/58 sm:text-base">
-            A simple view of your outreach progress, the next place to work, and the latest activity across the system.
+            A simple view of your outreach progress, readiness, and the next action that gives you the best chance of getting hired.
           </p>
           {degraded ? (
             <div className="mt-5 rounded-[20px] border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-white/58">
               Some data is loading from a fallback source right now, so a few numbers may be slightly behind.
             </div>
           ) : null}
+          <div className={`mt-5 rounded-[22px] border px-4 py-4 ${readinessTone}`}>
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-current/80">Apply readiness</p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">
+                  {readiness.ready ? "You are ready to apply" : "You are not ready yet"}
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-7 text-white/70">{readiness.summary}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3 text-right">
+                <p className="text-xs uppercase tracking-[0.18em] text-white/45">Readiness score</p>
+                <p className="mt-2 text-3xl font-semibold text-white">{readiness.score}/100</p>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -134,19 +156,80 @@ export function DashboardOverviewClient({
           <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm font-medium text-white/55">Primary action</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Generate and send your next outreach batch</h2>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Work the next highest-leverage step</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-white/58">
-                Open the outreach workspace to generate personalized drafts, review them, and send them when you are ready.
+                {readiness.blockers[0] ??
+                  "Open the outreach workspace to generate personalized drafts, review them, and send them when you are ready."}
               </p>
             </div>
-            <Link
-              href="/outreach"
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-semibold text-black transition hover:bg-white/90"
-            >
-              Generate & Send Emails
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-primary/20 bg-primary/10 px-5 text-sm font-semibold text-white transition hover:bg-primary/15"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("jobos:assistant-prompt", {
+                      detail: { prompt: "Improve my chances with the current setup.", openAssistant: true }
+                    })
+                  )
+                }
+              >
+                <Sparkles className="h-4 w-4 text-primary" />
+                Ask Assistant
+              </button>
+              <Link
+                href="/outreach"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-semibold text-black transition hover:bg-white/90"
+              >
+                Generate & Send Emails
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
           </div>
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <article className="rounded-[28px] border border-white/10 bg-[#111315] px-6 py-6 sm:px-8">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-sm font-medium text-white/55">Improvement loop</p>
+                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-white">Progress you can feel</h2>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div className="rounded-[22px] border border-white/10 bg-[#0d0f11] px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.16em] text-white/35">ATS</p>
+                <p className="mt-2 text-lg font-semibold text-white">{improvementLoop.atsScoreLabel}</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-[#0d0f11] px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.16em] text-white/35">Email quality</p>
+                <p className="mt-2 text-lg font-semibold text-white">{improvementLoop.emailScoreLabel}</p>
+              </div>
+            </div>
+            {improvementLoop.highlights.length > 0 ? (
+              <div className="mt-4 space-y-2">
+                {improvementLoop.highlights.map((item) => (
+                  <p key={item} className="text-sm leading-7 text-white/58">
+                    {item}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+          </article>
+
+          <article className="rounded-[28px] border border-white/10 bg-[#111315] px-6 py-6 sm:px-8">
+            <p className="text-sm font-medium text-white/55">Fix next</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Highest priority items</h2>
+            <div className="mt-5 space-y-3">
+              {(readiness.blockers.length > 0 ? readiness.blockers : readiness.improvements.slice(0, 3)).map((item) => (
+                <div key={item} className="flex items-start gap-3 rounded-[22px] border border-white/10 bg-[#0d0f11] px-4 py-4">
+                  <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <p className="text-sm leading-7 text-white/65">{item}</p>
+                </div>
+              ))}
+            </div>
+          </article>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-4">

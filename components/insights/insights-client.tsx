@@ -12,40 +12,7 @@ import { VoiceInputButton } from "@/components/shared/voice-input-button";
 import { apiFetch } from "@/lib/http";
 import { formatPercent, stripHtml } from "@/lib/utils";
 import { getSentimentTone } from "@/lib/workspace-ui";
-import type { JobTargetPersona } from "@/types/app";
-
-interface AnalyticsSnapshot {
-  responseRate: number;
-  openRate: number;
-  personalInsights: {
-    averageReplyProbability: number;
-  };
-}
-
-interface CampaignDetail {
-  id: string;
-  emailLogs: Array<{
-    id: string;
-    recruiterId: string;
-    recruiter: { name: string; company: string };
-  }>;
-}
-
-interface ReplyAnalysisSummary {
-  id: string;
-  sentiment: string;
-  intent?: string;
-  summary: string;
-  suggestedReply: string;
-  suggestedNextStep: string;
-  recruiter?: { name: string; company: string };
-}
-
-interface ReplyInsightsSnapshot {
-  summary: string;
-  weakPatterns: string[];
-  recommendations: string[];
-}
+import type { AnalyticsSnapshot, CampaignDetail, JobTargetPersona, ReplyAnalysisSummary, ReplyInsightsSnapshot } from "@/types/app";
 
 export function InsightsClient({
   analytics,
@@ -69,7 +36,7 @@ export function InsightsClient({
   const [refreshing, setRefreshing] = useState(false);
 
   const replyOptions = selectedCampaign?.emailLogs ?? [];
-  const selectedReplyLog = replyOptions.find((log: any) => log.id === selectedReplyLogId) ?? replyOptions[0] ?? null;
+  const selectedReplyLog = replyOptions.find((log) => log.id === selectedReplyLogId) ?? replyOptions[0] ?? null;
 
   async function copyToClipboard(value: string, label: string) {
     try {
@@ -180,9 +147,9 @@ export function InsightsClient({
               className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-white outline-none transition focus:border-primary/40"
             >
               {replyOptions.length > 0 ? (
-                replyOptions.map((log: any) => (
+                replyOptions.map((log) => (
                   <option key={log.id} value={log.id} className="bg-[#111111] text-white">
-                    {log.recruiter?.name || 'Unknown'} | {log.recruiter?.company || 'Unknown'}
+                    {log.recruiter?.name || "Unknown"} | {log.recruiter?.company || "Unknown"}
                   </option>
                 ))
               ) : (
@@ -280,7 +247,7 @@ export function InsightsClient({
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {recentAnalyses.length > 0 ? (
-            recentAnalyses.map((analysis: ReplyAnalysisSummary) => (
+            recentAnalyses.map((analysis) => (
               <div key={analysis.id} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className={getSentimentTone(analysis.sentiment)}>{analysis.sentiment}</Badge>
@@ -299,4 +266,3 @@ export function InsightsClient({
     </div>
   );
 }
-

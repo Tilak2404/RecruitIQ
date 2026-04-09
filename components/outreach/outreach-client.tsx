@@ -24,7 +24,7 @@ import {
   type EmailScoreMap,
   type StatusFilter
 } from "@/lib/workspace-ui";
-import type { CampaignDetail, DashboardSnapshot, EmailQualityScore, JobTargetPersona, OutreachOverview, SendTimeSuggestion, StoredAtsAnalysis } from "@/types/app";
+import type { CampaignDetail, DashboardSnapshot, EmailQualityScore, JobTargetPersona, SendTimeSuggestion, StoredAtsAnalysis } from "@/types/app";
 
 type Recruiters = DashboardSnapshot["recruiters"];
 type ResumeRecord = DashboardSnapshot["resume"];
@@ -33,7 +33,6 @@ export function OutreachClient({
   initialRecruiters,
   initialCampaign,
   initialResume,
-  initialOverview,
   initialTimeSuggestion,
   initialPersona,
   hasActiveAccount,
@@ -42,7 +41,6 @@ export function OutreachClient({
   initialRecruiters: Recruiters;
   initialCampaign: CampaignDetail | null;
   initialResume: ResumeRecord;
-  initialOverview: OutreachOverview;
   initialTimeSuggestion: SendTimeSuggestion;
   initialPersona: JobTargetPersona;
   hasActiveAccount: boolean;
@@ -62,6 +60,7 @@ export function OutreachClient({
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [followUpLoading, setFollowUpLoading] = useState(false);
   const [clearSentLoading, setClearSentLoading] = useState(false);
+  const [archiveSentLoading, setArchiveSentLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [scheduleAt, setScheduleAt] = useState(getDefaultScheduleValue());
   const [sendSummary, setSendSummary] = useState<{ sent: number; failed: number; processed: number } | null>(null);
@@ -136,11 +135,30 @@ export function OutreachClient({
   const sentDrafts = drafts.filter((draft) => ["SENT", "OPENED", "REPLIED"].includes(draft.status));
   const failedDrafts = drafts.filter((draft) => draft.status === "FAILED");
   const clearableSentDrafts = drafts.filter((draft) => draft.status === "SENT");
+  const archivableSentDrafts = drafts.filter((draft) => ["SENT", "OPENED", "REPLIED"].includes(draft.status));
   const visibleDrafts = drafts.filter((draft) => matchesStatusFilter(draft.status, statusFilter));
   const changedDrafts = drafts.filter((draft) => {
     const original = selectedCampaign?.emailLogs.find((log) => log.id === draft.id);
     return original ? original.subject !== draft.subject || original.body !== draft.body : true;
   });
+  const atsKeywordCoverage =
+    activeAtsAnalysis?.matchedKeywords.slice(0, 3).filter((skill) =>
+      sendableDrafts.some((draft) => draft.body.toLowerCase().includes(skill.toLowerCase()))
+    ).length ?? 0;
+  const sendableScores = sendableDrafts
+    .map((draft) => emailScores[draft.id])
+    .filter((score): score is EmailQualityScore => Boolean(score));
+  const preflightWarnings = [
+    activeAtsAnalysis && atsKeywordCoverage === 0
+      ? "Current sendable drafts are not clearly echoing the strongest ATS-backed keywords."
+      : "",
+    sendableScores.length > 0 && sendableScores.some((score) => score.replyScore < 60)
+      ? "At least one sendable draft still has a weak reply score."
+      : "",
+    sendableScores.length > 0 && sendableScores.some((score) => score.issues.some((issue) => issue.toLowerCase().includes("cta")))
+      ? "Your CTA is still soft in part of the current batch."
+      : ""
+  ].filter(Boolean);
 
   async function copyToClipboard(value: string, label: string) {
     try {
@@ -264,7 +282,11 @@ export function OutreachClient({
       return;
     }
 
-    const confirmed = window.confirm(`Send ${sendableDrafts.length} pending email${sendableDrafts.length === 1 ? "" : "s"} now?`);
+    const confirmed = window.confirm(
+      `Send ${sendableDrafts.length} pending email${sendableDrafts.length === 1 ? "" : "s"} now?${
+        preflightWarnings[0] ? `\n\nPreflight warning: ${preflightWarnings[0]}` : ""
+      }`
+    );
     if (!confirmed) return;
 
     setSendLoading(true);
@@ -392,6 +414,50 @@ export function OutreachClient({
       toast.error(error instanceof Error ? error.message : "Could not clear sent emails.");
     } finally {
       setClearSentLoading(false);
+    }
+  }
+
+  async function handleArchiveSent() {
+    if (!selectedCampaign) {
+      toast.error("Nothing to archive yet.");
+      return;
+    }
+
+    if (archivableSentDrafts.length === 0) {
+      toast("No delivered emails to archive");
+      return;
+    }
+
+    const confirmed = window.confirm("Download a CSV archive and remove delivered emails from this workflow?");
+    if (!confirmed) return;
+
+    setArchiveSentLoading(true);
+
+    try {
+      const exportResponse = await fetch(`/api/logs/export?campaignId=${encodeURIComponent(selectedCampaign.id)}`);
+      if (!exportResponse.ok) {
+        throw new Error("Could not create the archive export.");
+      }
+
+      const blob = await exportResponse.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = downloadUrl;
+      anchor.download = `outreach-archive-${selectedCampaign.id}.csv`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(downloadUrl);
+
+      const result = await apiFetch<{ archived: number }>(`/api/campaigns/${selectedCampaign.id}/archive`, { method: "DELETE" });
+      setSendSummary(null);
+      await refreshWorkflow();
+      router.refresh();
+      toast.success(`Archived ${result.archived} delivered email${result.archived === 1 ? "" : "s"}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not archive delivered emails.");
+    } finally {
+      setArchiveSentLoading(false);
     }
   }
 
@@ -558,9 +624,23 @@ export function OutreachClient({
               </Button>
             </div>
 
+            <div className="grid gap-3 lg:grid-cols-[1fr]">
+              <Button variant="secondary" disabled={!selectedCampaign || archiveSentLoading} onClick={() => void handleArchiveSent()}>
+                <Upload className="h-4 w-4" />
+                {archiveSentLoading ? "Archiving..." : "Archive Sent"}
+              </Button>
+            </div>
+
             <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4 text-sm leading-7 text-white/60">
               {initialTimeSuggestion.rationale}
             </div>
+
+            {preflightWarnings.length > 0 ? (
+              <div className="rounded-[24px] border border-amber-300/20 bg-amber-300/10 px-4 py-4 text-sm text-amber-50">
+                <p className="font-semibold text-white">Consistency preflight</p>
+                <p className="mt-2 leading-7">{preflightWarnings[0]}</p>
+              </div>
+            ) : null}
 
             {!initialResume ? (
               <div className="flex items-center gap-3 rounded-[24px] border border-yellow-400/20 bg-yellow-400/10 px-4 py-3 text-sm text-yellow-100">
@@ -654,11 +734,22 @@ export function OutreachClient({
                         </div>
                         <div className="text-right">
                           <Badge className={scoreTone.className}>{scoreTone.badge}</Badge>
-                          <p className="mt-2 text-2xl font-semibold text-white">{draftScore.score}/100</p>
+                          <p className="mt-2 text-2xl font-semibold text-white">{draftScore.replyScore}/100</p>
                         </div>
                       </div>
                       <div className="mt-4 space-y-3">
-                        <Progress value={draftScore.score} />
+                        <Progress value={draftScore.replyScore} />
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/65">
+                            Personalization {draftScore.personalizationScore}/100
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/65">
+                            CTA {draftScore.ctaStrengthScore}/100
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/65">
+                            Clarity {draftScore.clarityScore}/100
+                          </div>
+                        </div>
                         <div className="grid gap-2 md:grid-cols-2">
                           {draftScore.reasons.slice(0, 2).map((item) => (
                             <div key={item} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/65">
@@ -666,6 +757,9 @@ export function OutreachClient({
                             </div>
                           ))}
                         </div>
+                        {draftScore.issues.length > 0 ? (
+                          <p className="text-sm leading-7 text-amber-100/85">Issue to fix: {draftScore.issues[0]}</p>
+                        ) : null}
                         {draftScore.suggestions.length > 0 ? (
                           <p className="text-sm leading-7 text-white/55">Improve next: {draftScore.suggestions[0]}</p>
                         ) : null}

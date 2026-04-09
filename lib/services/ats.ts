@@ -169,6 +169,15 @@ export async function getActiveAtsAnalysis() {
   return active ?? null;
 }
 
+export async function getRecentAtsAnalyses(limit = 5) {
+  const messages = await getStoredAtsMessages(Math.max(limit, 1) * 3);
+
+  return messages
+    .map((message) => toStoredAtsAnalysis(message))
+    .filter((message): message is StoredAtsAnalysis => Boolean(message))
+    .slice(0, limit);
+}
+
 export async function applyAtsImprovementsToPrimaryResume(analysisId: string) {
   const messages = await getStoredAtsMessages(40);
   const target = messages.find((message) => message.id === analysisId);

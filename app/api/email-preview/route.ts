@@ -5,8 +5,13 @@ import { updateEmailLogSchema } from "@/lib/validators";
 export async function PUT(request: Request) {
   try {
     const payload = updateEmailLogSchema.parse(await request.json());
+    const emailLogId = payload.emailLogId ?? payload.id;
+    if (!emailLogId) {
+      throw new Error("Email log id is required");
+    }
+
     const log = await prisma.emailLog.update({
-      where: { id: payload.emailLogId },
+      where: { id: emailLogId },
       data: {
         subject: payload.subject,
         body: payload.body,

@@ -1,22 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { analyzeRecruiterReply } from "@/lib/services/gemini";
-import { z } from "zod";
+import type { ReplyAnalysisSummary } from "@/types/app";
 
-const ReplyAnalysisSchema = z.object({
-  sentiment: z.enum(["POSITIVE", "NEUTRAL", "NEGATIVE"]),
-  intent: z.enum(["INTERVIEW_REQUEST", "NEED_MORE_INFO", "REJECTION", "GENERAL_REPLY", "UNKNOWN"]),
-  confidence: z.number().min(0).max(1),
-  summary: z.string(),
-  suggestedReply: z.string(),
-  suggestedNextStep: z.string()
-});
-
-type ReplyAnalysisType = z.infer<typeof ReplyAnalysisSchema> & {
-  reply_type: "interested" | "reject" | "ghosting" | "neutral";
-  recruiter: { name: string; company: string } | null;
-};
-
-const DEFAULT_ANALYSIS: ReplyAnalysisType = {
+const DEFAULT_ANALYSIS: ReplyAnalysisSummary = {
+  id: "fallback-analysis",
   sentiment: "NEUTRAL",
   intent: "UNKNOWN",
   confidence: 0.5,
@@ -24,47 +11,28 @@ const DEFAULT_ANALYSIS: ReplyAnalysisType = {
   suggestedReply: "Thank you for your response. Best regards.",
   suggestedNextStep: "Reply promptly.",
   reply_type: "neutral",
-  recruiter: null
+  recruiter: null,
+  createdAt: new Date()
 };
 
 export async function analyzeAndStoreReply(payload: {
   content: string;
   emailLogId?: string;
   recruiterId?: string;
-}): Promise<ReplyAnalysisType> {
+}): Promise<ReplyAnalysisSummary> {
   try {
     const rawAnalysis = await analyzeRecruiterReply({
-      content: payload.content,
+      content: payload.content
     });
-
-    let analysis: any = rawAnalysis;
-
-    // SAFE cleaning
-    if (typeof rawAnalysis === 'string') {
-      const cleaned = rawAnalysis
-        .replace(/```json|```/gi, "")
-        .trim();
-      try {
-        analysis = JSON.parse(cleaned);
-      } catch {
-        analysis = { summary: rawAnalysis };
-      }
-    }
-
-    // Enrich with reply_type
-    const enriched = {
-      ...analysis,
-      reply_type: detectReplyType(analysis.intent || 'UNKNOWN', analysis.sentiment || 'NEUTRAL', payload.content),
-      confidence: analysis.confidence || 0.7
-    };
 
     const safeAnalysis = {
       ...DEFAULT_ANALYSIS,
-      ...enriched
+      ...rawAnalysis,
+      reply_type: detectReplyType(rawAnalysis.intent, rawAnalysis.sentiment, payload.content),
+      confidence: rawAnalysis.confidence ?? 0.7
     };
 
-    // Store (fixed Prisma schema)
-    await prisma.replyAnalysis.create({
+    const created = await prisma.replyAnalysis.create({
       data: {
         recruiterId: payload.recruiterId || null,
         emailLogId: payload.emailLogId || null,
@@ -73,29 +41,46 @@ export async function analyzeAndStoreReply(payload: {
         intent: safeAnalysis.intent,
         summary: safeAnalysis.summary,
         suggestedReply: safeAnalysis.suggestedReply,
-        suggestedNextStep: safeAnalysis.suggestedNextStep,
+        suggestedNextStep: safeAnalysis.suggestedNextStep
+      },
+      select: {
+        id: true,
+        sentiment: true,
+        intent: true,
+        summary: true,
+        suggestedReply: true,
+        suggestedNextStep: true,
+        createdAt: true,
+        recruiter: {
+          select: {
+            name: true,
+            company: true
+          }
+        }
       }
     });
 
-    return safeAnalysis;
+    return {
+      ...created,
+      suggestedNextStep: created.suggestedNextStep ?? safeAnalysis.suggestedNextStep,
+      reply_type: detectReplyType(created.intent, created.sentiment, payload.content),
+      confidence: safeAnalysis.confidence,
+      recruiter: created.recruiter || null
+    };
   } catch (error) {
-    console.error('[REPLIES] Failed:', error);
-    return DEFAULT_ANALYSIS;
+    console.error("[REPLIES] Failed:", error);
+    return {
+      ...DEFAULT_ANALYSIS,
+      id: `fallback-${Date.now()}`,
+      createdAt: new Date()
+    };
   }
 }
 
-export async function getRecentReplyAnalyses(limit = 5) {
-  return prisma.replyAnalysis.findMany({
+export async function getRecentReplyAnalyses(limit = 5): Promise<ReplyAnalysisSummary[]> {
+  const analyses = await prisma.replyAnalysis.findMany({
     orderBy: { createdAt: "desc" },
     take: limit,
-    include: {
-      recruiter: {
-        select: {
-          name: true,
-          company: true
-        }
-      }
-    },
     select: {
       id: true,
       sentiment: true,
@@ -103,26 +88,37 @@ export async function getRecentReplyAnalyses(limit = 5) {
       summary: true,
       suggestedReply: true,
       suggestedNextStep: true,
-      createdAt: true
+      createdAt: true,
+      recruiter: {
+        select: {
+          name: true,
+          company: true
+        }
+      }
     }
-  }).then(analyses => analyses.map(analysis => ({
+  });
+
+  return analyses.map((analysis) => ({
     ...analysis,
+    suggestedNextStep: analysis.suggestedNextStep ?? "Reply promptly.",
     reply_type: detectReplyType(analysis.intent, analysis.sentiment, analysis.summary),
     confidence: 0.7,
     recruiter: analysis.recruiter || null
-  } as ReplyAnalysisType)));
+  }));
 }
 
-function detectReplyType(intent: string, sentiment: string, content: string): ReplyAnalysisType['reply_type'] {
+function detectReplyType(
+  intent: ReplyAnalysisSummary["intent"],
+  sentiment: ReplyAnalysisSummary["sentiment"],
+  content: string
+): ReplyAnalysisSummary["reply_type"] {
   const lower = content.toLowerCase();
   
-  if (sentiment === "POSITIVE" || intent.includes("INTERVIEW") || 
-      lower.includes("schedule") || lower.includes("next step")) {
+  if (sentiment === "POSITIVE" || intent.includes("INTERVIEW") || lower.includes("schedule") || lower.includes("next step")) {
     return "interested";
   }
   
-  if (sentiment === "NEGATIVE" || intent.includes("REJECTION") || 
-      lower.includes("not moving") || lower.includes("decline")) {
+  if (sentiment === "NEGATIVE" || intent.includes("REJECTION") || lower.includes("not moving") || lower.includes("decline")) {
     return "reject";
   }
   
@@ -132,4 +128,3 @@ function detectReplyType(intent: string, sentiment: string, content: string): Re
   
   return "neutral";
 }
-
