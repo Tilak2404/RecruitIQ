@@ -1,21 +1,22 @@
-# RecruitIQ Enhancement Plan
+# RecruitIQ TODO
 
-## Status: Plan Approved ✅
+## 🚀 Quick Wins (1-2 hours)
+- [ ] Add all missing Zod schemas to lib/validators/index.ts (sendingAccountSchema, atsAnalyzeSchema, createCampaignSchema, etc. from tsc errors)
+- [ ] Fix types/app.ts missing interfaces (AssistantMessageSummary, DashboardSnapshot, AccountSummary, AbTestSummary, etc.)
+- [ ] Restart `npm run dev` after changes (Turbopack cache)
+- [ ] Test /resume POST/PUT, /dashboard
 
-**Current Step:** Create comprehensive README.md
+## 🔧 Core Fixes (4-6 hours)
+- [ ] Complete lib/validators schemas for all API routes
+- [ ] Add missing types to types/app.ts
+- [ ] Fix all tsc --noEmit errors (174 total)
+- [ ] Add .env vars table to README
 
-**Steps:**
-1. [x] Gather project info from key files (package.json, schema.prisma, lib/services/gemini.ts, README.md)
-2. [x] Analyze & evaluate (Score: 9.2/10 - Feature-complete AI outreach dashboard)
-3. [x] User approved plan
-4. [ ] **Create README.md** with badges, features table, setup, deployment, evaluation
-5. [ ] git add . && git commit -m "docs: add comprehensive README with project evaluation"
-6. [ ] git push origin master
-7. [ ] Verify https://github.com/Tilak2404/RecruitIQ
+## 🎯 Production Polish
+- [ ] Clerk/NextAuth auth
+- [ ] Vercel deploy guide
+- [ ] Vitest e2e coverage
+- [ ] BullMQ queue for worker
 
-**Evaluation Summary:**
-- **Score:** 9.2/10
-- **Strengths:** Next.js 15, Gemini AI integration, Prisma PG, full-stack automation
-- **Weaknesses:** No auth, no tests, worker separate, env setup heavy
+**Status:** Build error free, AI features ready (add GEMINI_API_KEY)
 
-**Next:** Execute step 4
