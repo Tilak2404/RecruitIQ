@@ -132,13 +132,15 @@ scripts/             # outreach-worker.ts
 
 1. Push the repo to GitHub.
 2. In Render, create a new Blueprint from the repo.
-3. Enter `GEMINI_API_KEY` when Render prompts for it.
-4. Let Render create `recruitiq-web`, `recruitiq-worker`, and `recruitiq-db`.
-5. After deploy, verify `https://<your-web-service>.onrender.com/api/health`.
+3. Enter `GEMINI_API_KEY` and `APP_BASE_URL` when Render prompts for them.
+4. Add `SERPER_API_KEY` only if you want company research/search enrichment.
+5. Let Render create `recruitiq-web`, `recruitiq-worker`, and `recruitiq-db`.
+6. After deploy, verify `https://<your-web-service>.onrender.com/api/health`.
 
 Notes:
-- `render.yaml` runs `npx prisma db push` before deploys so the schema is created automatically.
-- The worker reuses the web service's `GEMINI_API_KEY`, `APP_ENCRYPTION_KEY`, and public URL.
+- `render.yaml` runs `npm run prisma:deploy` before deploys. That uses `prisma migrate deploy` when migrations exist and safely falls back to `prisma db push` for the current repo state.
+- `CANDIDATE_NAME`, `GEMINI_MODEL`, worker cron settings, `PORT`, and `PRISMA_CLI_QUERY_ENGINE_TYPE` are not required for Render deploys.
+- The worker reuses the web service's `GEMINI_API_KEY`, `APP_ENCRYPTION_KEY`, and `APP_BASE_URL`.
 - The Blueprint is set to `starter` for web and worker, and `free` for Postgres. Change those plans in `render.yaml` before creating the Blueprint if you want a different cost profile.
 
 **Vercel (Recommended):**
