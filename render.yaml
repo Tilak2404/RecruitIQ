@@ -1,0 +1,93 @@
+services:
+  - type: web
+    name: recruitiq-web
+    runtime: node
+    plan: starter
+    region: singapore
+    autoDeployTrigger: commit
+    healthCheckPath: /api/health
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npx prisma db push
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: recruitiq-db
+          property: connectionString
+      - key: DIRECT_URL
+        fromDatabase:
+          name: recruitiq-db
+          property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
+      - key: CANDIDATE_NAME
+        value: Chekkala Tilak
+      - key: APP_ENCRYPTION_KEY
+        generateValue: true
+      - key: OUTREACH_WORKER_CRON
+        value: "* * * * *"
+      - key: OUTREACH_TIMEZONE
+        value: Asia/Calcutta
+
+  - type: worker
+    name: recruitiq-worker
+    runtime: node
+    plan: starter
+    region: singapore
+    autoDeployTrigger: commit
+    buildCommand: npm ci
+    preDeployCommand: npx prisma db push
+    startCommand: npm run worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: recruitiq-db
+          property: connectionString
+      - key: DIRECT_URL
+        fromDatabase:
+          name: recruitiq-db
+          property: connectionString
+      - key: GEMINI_API_KEY
+        fromService:
+          type: web
+          name: recruitiq-web
+          envVarKey: GEMINI_API_KEY
+      - key: GEMINI_MODEL
+        fromService:
+          type: web
+          name: recruitiq-web
+          envVarKey: GEMINI_MODEL
+      - key: CANDIDATE_NAME
+        fromService:
+          type: web
+          name: recruitiq-web
+          envVarKey: CANDIDATE_NAME
+      - key: APP_ENCRYPTION_KEY
+        fromService:
+          type: web
+          name: recruitiq-web
+          envVarKey: APP_ENCRYPTION_KEY
+      - key: APP_BASE_URL
+        fromService:
+          type: web
+          name: recruitiq-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: OUTREACH_WORKER_CRON
+        fromService:
+          type: web
+          name: recruitiq-web
+          envVarKey: OUTREACH_WORKER_CRON
+      - key: OUTREACH_TIMEZONE
+        fromService:
+          type: web
+          name: recruitiq-web
+          envVarKey: OUTREACH_TIMEZONE
+
+databases:
+  - name: recruitiq-db
+    plan: free
+    databaseName: recruitiq
+    postgresMajorVersion: "17"
+    region: singapore

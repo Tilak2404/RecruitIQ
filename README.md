@@ -125,6 +125,22 @@ scripts/             # outreach-worker.ts
 
 ## Deployment
 
+**Render:**
+```
+# This repo includes render.yaml for Render Blueprints
+```
+
+1. Push the repo to GitHub.
+2. In Render, create a new Blueprint from the repo.
+3. Enter `GEMINI_API_KEY` when Render prompts for it.
+4. Let Render create `recruitiq-web`, `recruitiq-worker`, and `recruitiq-db`.
+5. After deploy, verify `https://<your-web-service>.onrender.com/api/health`.
+
+Notes:
+- `render.yaml` runs `npx prisma db push` before deploys so the schema is created automatically.
+- The worker reuses the web service's `GEMINI_API_KEY`, `APP_ENCRYPTION_KEY`, and public URL.
+- The Blueprint is set to `starter` for web and worker, and `free` for Postgres. Change those plans in `render.yaml` before creating the Blueprint if you want a different cost profile.
+
 **Vercel (Recommended):**
 ```
 vercel --prod
